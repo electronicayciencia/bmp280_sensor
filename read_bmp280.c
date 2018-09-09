@@ -3,7 +3,10 @@
  * Blog Electronica y Ciencia
  * https://electronicayciencia.blogspot.com
  *
- * Compiling command:
+ * GitHub
+ * https://github.com/electronicayciencia/bmp280_sensor
+ *
+ * Basic compiling command. See Makefile.
  * gcc -l wiringPi -o read_bmp280 read_bmp280.c bmp280.c sotf_i2c.c
  *
  * Reinoso G.
@@ -12,33 +15,39 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+
 #include "soft_i2c.h"
 #include "bmp280.h"
-//#include "bmp280_defs.h"
 
-#define SCL_PIN 4
-#define SDA_PIN 5
+/* Tried pins 3,4: not reccomended */
+#define SCL_PIN 10
+#define SDA_PIN 11
 
 i2c_t i2c; // global, i2c bus
 
 
-/* Interface for write:
- *  Example: rslt = dev->write(dev->dev_id, reg_addr[0], temp_buff, temp_len);
- */
+/* Custom I2C write function */
 int8_t user_i2c_write(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t len) {
-	//puts("call to write");
 	i2c_start(i2c);
 
 	if (i2c_send_byte(i2c, dev_id << 1 | I2C_WRITE) != I2C_ACK) {
 		fprintf(stderr, "No device found at address %02x.\n", dev_id);
+		i2c_stop(i2c);
+		return BMP280_E_COMM_FAIL;
 	}
 
-	i2c_send_byte(i2c, reg_addr);
+	if (i2c_send_byte(i2c, reg_addr) != I2C_ACK) {
+		i2c_stop(i2c);
+		return BMP280_E_COMM_FAIL;
+	}
 
 	int i;
 	for (i = 0; i < len; i++) {
 		if (i2c_send_byte(i2c, data[i]) != I2C_ACK) {
 			fprintf(stderr, "Failed to write I2C bus.\n");
+			i2c_stop(i2c);
+			return BMP280_E_COMM_FAIL;
 		}
 	}
 	
@@ -48,21 +57,27 @@ int8_t user_i2c_write(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t 
 }
 
 
-/* Interface for read:
- * Example: rslt = dev->read(dev->dev_id, reg_addr, reg_data, len);
- */
+/* Custom I2C read function */
 int8_t user_i2c_read(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t len) {
-	//puts("call to read");
 	i2c_start(i2c);
 
 	if (i2c_send_byte(i2c, dev_id << 1 | I2C_WRITE) != I2C_ACK) {
 		fprintf(stderr, "No device found at address %02x.\n", dev_id);
+		i2c_stop(i2c);
+		return BMP280_E_COMM_FAIL;
 	}
 
-	i2c_send_byte(i2c, reg_addr);
+	if (i2c_send_byte(i2c, reg_addr) != I2C_ACK) {
+		i2c_stop(i2c);
+		return BMP280_E_COMM_FAIL;
+	}
 
 	i2c_start(i2c);
-	i2c_send_byte(i2c, dev_id << 1 | I2C_READ);
+
+	if (i2c_send_byte(i2c, dev_id << 1 | I2C_READ) != I2C_ACK) {
+		i2c_stop(i2c);
+		return BMP280_E_COMM_FAIL;
+	}
 
 	int i = 0;
 	data[i] = i2c_read_byte(i2c);
@@ -79,11 +94,28 @@ int8_t user_i2c_read(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t l
 }
 
 
-/* Interface for delay_ms:
- * Example: dev->delay_ms(2);
- */
+/* Custom delay function */
 void user_delay_ms(uint32_t period) {
 	usleep(period * 1000);
+}
+
+
+void print_time_ms (void)
+{
+	int ms;
+	time_t s;
+    struct timespec spec;
+
+    clock_gettime(CLOCK_REALTIME, &spec);
+
+    s  = spec.tv_sec;
+    ms = (int)((spec.tv_nsec / 1.0e6) + 0.5);
+    if (ms > 999) {
+        s++;
+        ms = 0;
+    }
+
+    printf("%ld.%03d ", s, ms);
 }
 
 
@@ -109,17 +141,18 @@ int main(int argc, char ** argv) {
 	rslt = bmp280_init(&bmp);
 
 	if (rslt == BMP280_OK) {
-		/* Sensor chip ID will be printed if initialization was successful */
-		printf("Device found with chip id 0x%x\n", bmp.chip_id);
+		// Sensor chip ID will be printed if initialization was successful
+		fprintf(stderr, "Device found with chip id 0x%x\n", bmp.chip_id);
 	}
-
 	rslt = bmp280_get_config(&conf, &bmp);
 
 	/* Overwrite the desired settings */
 	conf.filter = BMP280_FILTER_OFF;
-	conf.os_pres = BMP280_OS_8X;
+	//conf.filter = BMP280_FILTER_COEFF_4;
+	conf.os_pres = BMP280_OS_16X;
 	conf.os_temp = BMP280_OS_2X;
 	conf.odr = BMP280_ODR_0_5_MS;
+	//conf.odr = BMP280_ODR_62_5_MS;
 
 	rslt = bmp280_set_config(&conf, &bmp);
 
@@ -132,25 +165,38 @@ int main(int argc, char ** argv) {
 	}
 
 	uint8_t meas_dur = bmp280_compute_meas_time(&bmp);
-	printf("Measurement duration: %dms\r\n", meas_dur);
+	fprintf(stderr, "Measurement duration: %dms\r\n", meas_dur);
 
+	/* Reading loop */
 	for (;;) {
 		struct bmp280_uncomp_data ucomp_data;
 	    bmp.delay_ms(meas_dur);
 
     	rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
 		
+		/* Check for apparently invalid values */
 		if (rslt != BMP280_OK) {
-			printf("Failed to read from device.\n");
-			exit(1);
+			continue;
 		}
 
+		if (  ucomp_data.uncomp_temp == 0xfffff || ucomp_data.uncomp_press == 0xfffff
+		   || ucomp_data.uncomp_temp == 0x0 || ucomp_data.uncomp_press == 0x0) {
+			continue;
+		}
+
+		/* Convert */
 	    double temp = bmp280_comp_temp_double(ucomp_data.uncomp_temp, &bmp);
 	    double pres = bmp280_comp_pres_double(ucomp_data.uncomp_press, &bmp);
 
-	    if (temp < 50 && temp > 0 && pres > 0)
-			printf("T: %f, P: %f\n", temp, pres);
+	    if (temp < 50 && temp > 0 && pres > 93000 && pres < 96000) {
+			print_time_ms();
+			printf("\t%f\t%f\n", temp, pres);
+		}
+		else {
+			fprintf(stderr, "Odd values: T:%f P:%f (T:%x P:%x)\n", 
+					temp, pres, ucomp_data.uncomp_temp, ucomp_data.uncomp_press);
+		}
 	
-	    //bmp.delay_ms(10);  
+	    //bmp.delay_ms(10);
 	}
 }
