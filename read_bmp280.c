@@ -104,18 +104,18 @@ void print_time_ms (void)
 {
 	int ms;
 	time_t s;
-    struct timespec spec;
+	struct timespec spec;
 
-    clock_gettime(CLOCK_REALTIME, &spec);
+	clock_gettime(CLOCK_REALTIME, &spec);
 
-    s  = spec.tv_sec;
-    ms = (int)((spec.tv_nsec / 1.0e6) + 0.5);
-    if (ms > 999) {
-        s++;
-        ms = 0;
-    }
+	s  = spec.tv_sec;
+	ms = (int)((spec.tv_nsec / 1.0e6) + 0.5);
+	if (ms > 999) {
+		s++;
+		ms = 0;
+	}
 
-    printf("%ld.%03d ", s, ms);
+	printf("%ld.%03d ", s, ms);
 }
 
 
@@ -147,8 +147,8 @@ int main(int argc, char ** argv) {
 	rslt = bmp280_get_config(&conf, &bmp);
 
 	/* Overwrite the desired settings */
-	conf.filter = BMP280_FILTER_OFF;
-	//conf.filter = BMP280_FILTER_COEFF_4;
+	//conf.filter = BMP280_FILTER_OFF;
+	conf.filter = BMP280_FILTER_COEFF_4;
 	conf.os_pres = BMP280_OS_16X;
 	conf.os_temp = BMP280_OS_2X;
 	conf.odr = BMP280_ODR_0_5_MS;
@@ -170,25 +170,27 @@ int main(int argc, char ** argv) {
 	/* Reading loop */
 	for (;;) {
 		struct bmp280_uncomp_data ucomp_data;
-	    bmp.delay_ms(meas_dur);
+		bmp.delay_ms(meas_dur);
 
-    	rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
+		rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
 		
 		/* Check for apparently invalid values */
 		if (rslt != BMP280_OK) {
+			fprintf(stderr, "Warning: read error\n");
 			continue;
 		}
 
 		if (  ucomp_data.uncomp_temp == 0xfffff || ucomp_data.uncomp_press == 0xfffff
 		   || ucomp_data.uncomp_temp == 0x0 || ucomp_data.uncomp_press == 0x0) {
+			fprintf(stderr, "Warning: read error\n");
 			continue;
 		}
 
 		/* Convert */
-	    double temp = bmp280_comp_temp_double(ucomp_data.uncomp_temp, &bmp);
-	    double pres = bmp280_comp_pres_double(ucomp_data.uncomp_press, &bmp);
+		double temp = bmp280_comp_temp_double(ucomp_data.uncomp_temp, &bmp);
+		double pres = bmp280_comp_pres_double(ucomp_data.uncomp_press, &bmp);
 
-	    if (temp < 50 && temp > 0 && pres > 93000 && pres < 96000) {
+		if (temp < 50 && temp > 0 && pres > 93000 && pres < 96000) {
 			print_time_ms();
 			printf("\t%f\t%f\n", temp, pres);
 		}
@@ -197,6 +199,6 @@ int main(int argc, char ** argv) {
 					temp, pres, ucomp_data.uncomp_temp, ucomp_data.uncomp_press);
 		}
 	
-	    //bmp.delay_ms(10);
+		//bmp.delay_ms(10);
 	}
 }
