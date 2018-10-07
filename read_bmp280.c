@@ -151,8 +151,8 @@ int main(int argc, char ** argv) {
 	conf.filter = BMP280_FILTER_COEFF_4;
 	conf.os_pres = BMP280_OS_16X;
 	conf.os_temp = BMP280_OS_2X;
-	conf.odr = BMP280_ODR_0_5_MS;
-	//conf.odr = BMP280_ODR_62_5_MS;
+	//conf.odr = BMP280_ODR_0_5_MS;
+	conf.odr = BMP280_ODR_62_5_MS;
 
 	rslt = bmp280_set_config(&conf, &bmp);
 
@@ -199,6 +199,6 @@ int main(int argc, char ** argv) {
 					temp, pres, ucomp_data.uncomp_temp, ucomp_data.uncomp_press);
 		}
 	
-		//bmp.delay_ms(10);
+		bmp.delay_ms(1000-meas_dur-3);
 	}
 }
